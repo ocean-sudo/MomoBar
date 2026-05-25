@@ -1,0 +1,53 @@
+name: Build and Release MomoBar
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger when pushing a version tag, e.g. v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Compile Swift App
+        run: |
+          swiftc -O main.swift -o MomoBar
+
+      - name: Construct .app Bundle
+        run: |
+          mkdir -p MomoBar.app/Contents/MacOS
+          mkdir -p MomoBar.app/Contents/Resources
+          cp MomoBar MomoBar.app/Contents/MacOS/
+          cp Info.plist MomoBar.app/Contents/
+          if [ -f AppIcon.icns ]; then
+            cp AppIcon.icns MomoBar.app/Contents/Resources/
+          fi
+          # Add-hoc sign the compiled app bundle (required for Apple Silicon support)
+          codesign --force --deep --sign - MomoBar.app
+
+      - name: Package to Zip
+        run: |
+          zip -qy -r MomoBar.zip MomoBar.app
+
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MomoBar.zip
+          name: MomoBar ${{ github.ref_name }}
+          body: |
+            ## MomoBar macOS 菜单栏助手 ${{ github.ref_name }}
+            
+            这是通过 GitHub Actions 自动编译生成的正式发布版。
+            
+            ### 📦 安装使用说明：
+            1. 下载下方的 `MomoBar.zip` 并解压。
+            2. 将解压出来的 `MomoBar.app` 拖入您的 `应用程序 (Applications)` 文件夹。
+            3. **重要提示（首次运行）**：因为应用未签名官方证书，请**右键（或 Control + 点击）`MomoBar.app` -> 选择“打开”**，在弹出的窗口中确认打开即可！
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
