@@ -1,9 +1,27 @@
 import Cocoa
 import WebKit
+import Carbon
+
+// Global notification for hotkey toggle
+extension Notification.Name {
+    static let togglePopover = Notification.Name("TogglePopoverNotification")
+}
+
+// Global hotkey reference
+var hotKeyRef: EventHotKeyRef?
+
+// C-compatible global event handler callback for Carbon Hotkeys
+func hotKeyHandler(nextHandler: EventHandlerCallRef?, event: EventRef?, userData: UnsafeMutableRawPointer?) -> OSStatus {
+    NotificationCenter.default.post(name: .togglePopover, object: nil)
+    return noErr
+}
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var popover: NSPopover!
+    
+    let keyCodeKey = "HotkeyKeyCode"
+    let modifiersKey = "HotkeyModifiers"
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Set activation policy to accessory so it doesn't show in the Dock
@@ -15,7 +33,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create status item in the menu bar
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            // Set menu bar icon (using SF Symbols, fallback to emoji)
             if let image = NSImage(systemSymbolName: "character.book.closed.fill", accessibilityDescription: "MomoBar") {
                 let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
                 button.image = image.withSymbolConfiguration(config)
@@ -31,6 +48,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentSize = NSSize(width: 400, height: 650)
         popover.behavior = .transient // Closes automatically when clicking outside
         popover.contentViewController = WebViewController()
+        
+        // Observe hotkey trigger notification
+        NotificationCenter.default.addObserver(self, selector: #selector(handleHotkeyToggle), name: .togglePopover, object: nil)
+        
+        // Setup Carbon event handler for global keyboard shortcuts
+        setupHotkeyHandler()
+        
+        // Load and register hotkey
+        loadAndRegisterHotkey()
+    }
+    
+    @objc func handleHotkeyToggle() {
+        DispatchQueue.main.async {
+            self.togglePopover(self)
+        }
     }
     
     private func setupEditMenu() {
@@ -39,7 +71,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
         
-        // Standard editing menu items with Cmd equivalents
         editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -59,6 +90,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 popover.contentViewController?.view.window?.makeKey()
             }
+        }
+    }
+    
+    // Carbon Keyboard Event Handler
+    private func setupHotkeyHandler() {
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        
+        let status = InstallEventHandler(GetApplicationEventTarget(), { (nextHandler, event, userData) -> OSStatus in
+            return hotKeyHandler(nextHandler: nextHandler, event: event, userData: userData)
+        }, 1, &eventType, nil, nil)
+        
+        if status != noErr {
+            print("Failed to install Carbon event handler: \(status)")
+        }
+    }
+    
+    func loadAndRegisterHotkey() {
+        // Default shortcut is Cmd + Shift + M (M is 46, cmdKey | shiftKey is 256 | 512 = 768)
+        let keyCode = UserDefaults.standard.object(forKey: keyCodeKey) as? UInt32 ?? 46
+        let modifiers = UserDefaults.standard.object(forKey: modifiersKey) as? UInt32 ?? UInt32(cmdKey | shiftKey)
+        
+        registerHotkey(keyCode: keyCode, modifiers: modifiers)
+    }
+    
+    func registerHotkey(keyCode: UInt32, modifiers: UInt32) {
+        // Unregister existing if active
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
+        }
+        
+        var gHotKeyRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: UTGetOSTypeFromString("MomoHK" as CFString), id: 1)
+        
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &gHotKeyRef)
+        if status == noErr {
+            hotKeyRef = gHotKeyRef
+            print("Hotkey successfully registered!")
+        } else {
+            print("Failed to register hotkey, error status: \(status)")
         }
     }
 }
@@ -121,8 +192,8 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         cleanModeButton.action = #selector(toggleCleanMode)
         toolbar.addSubview(cleanModeButton)
         
-        // 5. URL Text Field (resized to fit the cleanModeButton)
-        urlTextField = NSTextField(frame: NSRect(x: 105, y: 8, width: 285, height: 24))
+        // 5. URL Text Field (fixed bounds to avoid overlapping with settings button)
+        urlTextField = NSTextField(frame: NSRect(x: 105, y: 8, width: 250, height: 24))
         urlTextField.isEditable = true
         urlTextField.isSelectable = true
         urlTextField.bezelStyle = .roundedBezel
@@ -132,17 +203,17 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         urlTextField.placeholderString = "Enter URL or Search..."
         toolbar.addSubview(urlTextField)
         
-        // 6. Quit Button
-        let quitButton = NSButton(frame: NSRect(x: 366, y: 8, width: 24, height: 24))
-        quitButton.bezelStyle = .texturedRounded
-        if let quitImage = NSImage(systemSymbolName: "power", accessibilityDescription: "Quit") {
-            quitButton.image = quitImage
+        // 6. Settings Button (Gear dropdown menu)
+        let settingsButton = NSButton(frame: NSRect(x: 366, y: 8, width: 24, height: 24))
+        settingsButton.bezelStyle = .texturedRounded
+        if let gearImage = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings") {
+            settingsButton.image = gearImage
         } else {
-            quitButton.title = "✕"
+            settingsButton.title = "⚙"
         }
-        quitButton.target = self
-        quitButton.action = #selector(quitApp)
-        toolbar.addSubview(quitButton)
+        settingsButton.target = self
+        settingsButton.action = #selector(showSettingsMenu(_:))
+        toolbar.addSubview(settingsButton)
         
         // 7. Create WKWebView (Bottom)
         let webConfiguration = WKWebViewConfiguration()
@@ -160,7 +231,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         toolbar.autoresizingMask = [.width, .minYMargin]
         urlTextField.autoresizingMask = [.width]
         cleanModeButton.autoresizingMask = [.none]
-        quitButton.autoresizingMask = [.minXMargin]
+        settingsButton.autoresizingMask = [.minXMargin]
         
         // Load saved URL or default
         let savedURL = UserDefaults.standard.string(forKey: urlKey) ?? defaultURL
@@ -171,7 +242,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         var cleanURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleanURL.isEmpty { return }
         
-        // Basic smart URL bar (if doesn't look like domain, search on Bing or assume https)
         if !cleanURL.contains(".") {
             let encodedQuery = cleanURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             cleanURL = "https://www.bing.com/search?q=\(encodedQuery)"
@@ -210,7 +280,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
     }
     
     func updateCleanModeButtonIcon() {
-        // If clean mode is active, we are hiding distractions, show eye.slash icon
         let iconName = isCleanModeActive ? "eye.slash" : "eye"
         let tooltip = isCleanModeActive ? "Show Menu & Footer" : "Hide Menu & Footer"
         
@@ -225,7 +294,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
     func applyCleanMode() {
         let js: String
         if isCleanModeActive {
-            // JavaScript to hide the header navbar and the footer, and expand the iframe to fill height
             js = """
             (function() {
                 var nav = document.querySelector('.navbar-momo');
@@ -241,7 +309,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
             })();
             """
         } else {
-            // JavaScript to restore standard layout
             js = """
             (function() {
                 var nav = document.querySelector('.navbar-momo');
@@ -261,9 +328,117 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
     
+    // Dropdown Settings Menu Action
+    @objc func showSettingsMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        
+        let headerItem = NSMenuItem(title: "MomoBar Settings", action: nil, keyEquivalent: "")
+        headerItem.isEnabled = false
+        menu.addItem(headerItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        // Display Current Hotkey in Option Label
+        let keyCode = UserDefaults.standard.object(forKey: "HotkeyKeyCode") as? UInt32 ?? 46
+        let modifiers = UserDefaults.standard.object(forKey: "HotkeyModifiers") as? UInt32 ?? UInt32(cmdKey | shiftKey)
+        let hotkeyStr = formatHotkeyString(keyCode: keyCode, modifiers: modifiers)
+        
+        let hotkeyItem = NSMenuItem(title: "Global Shortcut... (\(hotkeyStr))", action: #selector(changeHotkey), keyEquivalent: "")
+        hotkeyItem.target = self
+        menu.addItem(hotkeyItem)
+        
+        let homeItem = NSMenuItem(title: "Back to Home", action: #selector(goHome), keyEquivalent: "")
+        homeItem.target = self
+        menu.addItem(homeItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        let quitItem = NSMenuItem(title: "Quit MomoBar", action: #selector(quitApp), keyEquivalent: "")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        
+        // Popup menu relative to the button
+        let p = NSPoint(x: 0, y: sender.frame.height + 4)
+        menu.popUp(positioning: nil, at: p, in: sender)
+    }
+    
+    @objc func changeHotkey() {
+        let keyCode = UserDefaults.standard.object(forKey: "HotkeyKeyCode") as? UInt32 ?? 46
+        let modifiers = UserDefaults.standard.object(forKey: "HotkeyModifiers") as? UInt32 ?? UInt32(cmdKey | shiftKey)
+        
+        let alert = NSAlert()
+        alert.messageText = "Set Global Shortcut"
+        alert.informativeText = "Select your modifiers and enter a letter to update the global shortcut for launching MomoBar."
+        alert.alertStyle = .informational
+        
+        let settingsView = HotkeySettingsView(currentKeyCode: keyCode, currentModifiers: modifiers)
+        alert.accessoryView = settingsView
+        
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            var newModifiers: UInt32 = 0
+            if settingsView.cmdCheckbox.state == .on { newModifiers |= UInt32(cmdKey) }
+            if settingsView.shiftCheckbox.state == .on { newModifiers |= UInt32(shiftKey) }
+            if settingsView.optCheckbox.state == .on { newModifiers |= UInt32(optionKey) }
+            if settingsView.ctrlCheckbox.state == .on { newModifiers |= UInt32(controlKey) }
+            
+            let charStr = settingsView.keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let firstChar = charStr.first, let newKeyCode = keyCodeFromChar(String(firstChar)) {
+                // Save new keys
+                UserDefaults.standard.set(newKeyCode, forKey: "HotkeyKeyCode")
+                UserDefaults.standard.set(newModifiers, forKey: "HotkeyModifiers")
+                
+                // Apply update in AppDelegate
+                if let appDelegate = NSApp.delegate as? AppDelegate {
+                    appDelegate.registerHotkey(keyCode: newKeyCode, modifiers: newModifiers)
+                }
+            } else {
+                let errorAlert = NSAlert()
+                errorAlert.messageText = "Invalid Shortcut"
+                errorAlert.informativeText = "Please enter a valid keyboard letter (A-Z)."
+                errorAlert.alertStyle = .critical
+                errorAlert.runModal()
+            }
+        }
+    }
+    
+    private func formatHotkeyString(keyCode: UInt32, modifiers: UInt32) -> String {
+        var str = ""
+        if modifiers & UInt32(controlKey) != 0 { str += "⌃" }
+        if modifiers & UInt32(optionKey) != 0 { str += "⌥" }
+        if modifiers & UInt32(shiftKey) != 0 { str += "⇧" }
+        if modifiers & UInt32(cmdKey) != 0 { str += "⌘" }
+        
+        if let char = keyCharFromCode(keyCode) {
+            str += char
+        } else {
+            str += "?"
+        }
+        return str
+    }
+    
+    private func keyCodeFromChar(_ char: String) -> UInt32? {
+        let mapping: [String: UInt32] = [
+            "A": 0, "B": 11, "C": 8, "D": 2, "E": 14, "F": 3, "G": 5, "H": 4, "I": 34,
+            "J": 38, "K": 40, "L": 37, "M": 46, "N": 45, "O": 31, "P": 35, "Q": 12, "R": 15,
+            "S": 1, "T": 17, "U": 32, "V": 9, "W": 13, "X": 7, "Y": 16, "Z": 6
+        ]
+        return mapping[char.uppercased()]
+    }
+    
+    private func keyCharFromCode(_ code: UInt32) -> String? {
+        let mapping: [UInt32: String] = [
+            0: "A", 11: "B", 8: "C", 2: "D", 14: "E", 3: "F", 5: "G", 4: "H", 34: "I",
+            38: "J", 40: "K", 37: "L", 46: "M", 45: "N", 31: "O", 35: "P", 12: "Q", 15: "R",
+            1: "S", 17: "T", 32: "U", 9: "V", 13: "W", 7: "X", 16: "Y", 6: "Z"
+        ]
+        return mapping[code]
+    }
+    
     // WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Always apply current clean/focus mode settings when page finishes loading
         applyCleanMode()
         
         if let url = webView.url {
@@ -279,6 +454,63 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+}
+
+// Custom View for Hotkey Selection in Settings Dialog
+class HotkeySettingsView: NSView {
+    var cmdCheckbox: NSButton!
+    var shiftCheckbox: NSButton!
+    var optCheckbox: NSButton!
+    var ctrlCheckbox: NSButton!
+    var keyField: NSTextField!
+    
+    init(currentKeyCode: UInt32, currentModifiers: UInt32) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
+        
+        cmdCheckbox = NSButton(checkboxWithTitle: "⌘ Cmd", target: nil, action: nil)
+        shiftCheckbox = NSButton(checkboxWithTitle: "⇧ Shift", target: nil, action: nil)
+        optCheckbox = NSButton(checkboxWithTitle: "⌥ Opt", target: nil, action: nil)
+        ctrlCheckbox = NSButton(checkboxWithTitle: "⌃ Ctrl", target: nil, action: nil)
+        
+        cmdCheckbox.state = (currentModifiers & UInt32(cmdKey) != 0) ? .on : .off
+        shiftCheckbox.state = (currentModifiers & UInt32(shiftKey) != 0) ? .on : .off
+        optCheckbox.state = (currentModifiers & UInt32(optionKey) != 0) ? .on : .off
+        ctrlCheckbox.state = (currentModifiers & UInt32(controlKey) != 0) ? .on : .off
+        
+        let label = NSTextField(labelWithString: "Shortcut Key:")
+        label.frame = NSRect(x: 10, y: 10, width: 90, height: 20)
+        addSubview(label)
+        
+        keyField = NSTextField(frame: NSRect(x: 100, y: 8, width: 50, height: 22))
+        keyField.placeholderString = "M"
+        if let char = keyCharFromCode(currentKeyCode) {
+            keyField.stringValue = char.uppercased()
+        }
+        addSubview(keyField)
+        
+        cmdCheckbox.frame = NSRect(x: 10, y: 48, width: 65, height: 20)
+        shiftCheckbox.frame = NSRect(x: 80, y: 48, width: 65, height: 20)
+        optCheckbox.frame = NSRect(x: 150, y: 48, width: 65, height: 20)
+        ctrlCheckbox.frame = NSRect(x: 220, y: 48, width: 65, height: 20)
+        
+        addSubview(cmdCheckbox)
+        addSubview(shiftCheckbox)
+        addSubview(optCheckbox)
+        addSubview(ctrlCheckbox)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    private func keyCharFromCode(_ code: UInt32) -> String? {
+        let mapping: [UInt32: String] = [
+            0: "A", 11: "B", 8: "C", 2: "D", 14: "E", 3: "F", 5: "G", 4: "H", 34: "I",
+            38: "J", 40: "K", 37: "L", 46: "M", 45: "N", 31: "O", 35: "P", 12: "Q", 15: "R",
+            1: "S", 17: "T", 32: "U", 9: "V", 13: "W", 7: "X", 16: "Y", 6: "Z"
+        ]
+        return mapping[code]
     }
 }
 
