@@ -35,10 +35,21 @@ jobs:
         run: |
           zip -qy -r MomoBar.zip MomoBar.app
 
-      - name: Create GitHub Release and Upload Asset
+      - name: Package to DMG (Disk Image)
+        run: |
+          mkdir -p dmg_folder
+          cp -R MomoBar.app dmg_folder/
+          # Create a symbolic link to /Applications for standard drag-and-drop installer experience
+          ln -s /Applications dmg_folder/Applications
+          hdiutil create -fs HFS+ -srcfolder dmg_folder -volname "MomoBar Installation" MomoBar.dmg
+          rm -rf dmg_folder
+
+      - name: Create GitHub Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: MomoBar.zip
+          files: |
+            MomoBar.zip
+            MomoBar.dmg
           name: MomoBar ${{ github.ref_name }}
           body: |
             ## MomoBar macOS 菜单栏助手 ${{ github.ref_name }}
@@ -46,8 +57,15 @@ jobs:
             这是通过 GitHub Actions 自动编译生成的正式发布版。
             
             ### 📦 安装使用说明：
+            
+            #### 方式 A：使用 DMG 安装（推荐 🌟）
+            1. 下载下方的 **`MomoBar.dmg`** 并双击打开。
+            2. 在弹出的窗口中，将 **`MomoBar`** 拖拽到右侧的 **`Applications`** 快捷方式中即可完成安装。
+            3. **首次运行提示**：由于应用未签名官方证书，请在 `应用程序` 文件夹的 `MomoBar` 上**右键（或 Control + 点击） -> 选择“打开”**，并在弹出的窗口中确认打开。
+            
+            #### 方式 B：使用 ZIP 安装
             1. 下载下方的 `MomoBar.zip` 并解压。
             2. 将解压出来的 `MomoBar.app` 拖入您的 `应用程序 (Applications)` 文件夹。
-            3. **重要提示（首次运行）**：因为应用未签名官方证书，请**右键（或 Control + 点击）`MomoBar.app` -> 选择“打开”**，在弹出的窗口中确认打开即可！
+            3. 首次运行同样需要**右键选择打开**。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
