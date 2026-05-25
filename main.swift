@@ -122,7 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         var gHotKeyRef: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(signature: UTGetOSTypeFromString("MomoHK" as CFString), id: 1)
+        let hotKeyID = EventHotKeyID(signature: 1296975947, id: 1) // "MMHK" as FourCharCode literal to avoid deprecation warnings
         
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &gHotKeyRef)
         if status == noErr {
