@@ -118,19 +118,18 @@ class WebViewController: NSViewController, WKNavigationDelegate {
                         console.log("MomoBar AutoAgree: Found targets inside DOM/ShadowDOM.");
                         
                         var isChecked = checkbox.classList.contains('taroify-checkbox--checked') || 
-                                        checkbox.innerHTML.includes('success') || 
-                                        checkbox.querySelector('.van-icon-success') !== null ||
-                                        querySelectorDeep('.van-icon-success', checkbox) !== null;
+                                        checkbox.getAttribute('aria-checked') === 'true';
                         
                         if (!isChecked) {
                             console.log("MomoBar AutoAgree: Click-dispatching checkbox.");
                             var clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true });
-                            var icon = querySelectorDeep('.taroify-checkbox__icon', checkbox) || checkbox.querySelector('.taroify-checkbox__icon');
-                            var label = querySelectorDeep('.taroify-checkbox__label', checkbox) || checkbox.querySelector('.taroify-checkbox__label');
                             
-                            if (icon) icon.dispatchEvent(clickEvt);
-                            else if (label) label.dispatchEvent(clickEvt);
-                            else checkbox.dispatchEvent(clickEvt);
+                            // Dispatch click on the custom element container itself (holds framework listeners)
+                            checkbox.dispatchEvent(clickEvt);
+                            
+                            // Also try dispatching click on the inner label to be absolutely safe
+                            var label = querySelectorDeep('.taroify-checkbox__label', checkbox);
+                            if (label) label.dispatchEvent(clickEvt);
                         }
                         
                         setTimeout(function() {
