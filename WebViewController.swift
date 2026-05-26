@@ -87,26 +87,47 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.preferences.setValue(true, forKey: "developerExtrasEnabled") // Enable right-click inspect element
         
-        // Add auto-agree user script for public beta notification page (using highly robust Event dispatching)
+        // Add auto-agree user script for public beta notification page (using deep-query Shadow DOM traversal and physical DOM Event dispatching)
         let userContentController = WKUserContentController()
         let autoAgreeJS = """
         (function() {
+            console.log("MomoBar AutoAgree: Injected.");
+            
+            // Recursive function to search for selector inside standard DOM and nested open Shadow Roots
+            function querySelectorDeep(selector, root) {
+                root = root || document;
+                var element = root.querySelector(selector);
+                if (element) return element;
+                
+                var all = root.querySelectorAll('*');
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].shadowRoot) {
+                        var found = querySelectorDeep(selector, all[i].shadowRoot);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+            
             var checkInterval = setInterval(function() {
                 try {
-                    var checkbox = document.querySelector('.taroify-checkbox');
-                    var button = document.querySelector('taro-button-core');
+                    var checkbox = querySelectorDeep('.taroify-checkbox');
+                    var button = querySelectorDeep('taro-button-core');
+                    
                     if (checkbox && button && button.textContent.includes('开始学习')) {
-                        // Check if already checked to avoid double-clicking
+                        console.log("MomoBar AutoAgree: Found targets inside DOM/ShadowDOM.");
+                        
                         var isChecked = checkbox.classList.contains('taroify-checkbox--checked') || 
                                         checkbox.innerHTML.includes('success') || 
-                                        checkbox.querySelector('.van-icon-success') !== null;
+                                        checkbox.querySelector('.van-icon-success') !== null ||
+                                        querySelectorDeep('.van-icon-success', checkbox) !== null;
                         
                         if (!isChecked) {
+                            console.log("MomoBar AutoAgree: Click-dispatching checkbox.");
                             var clickEvt = new MouseEvent('click', { bubbles: true, cancelable: true });
-                            var icon = checkbox.querySelector('.taroify-checkbox__icon');
-                            var label = checkbox.querySelector('.taroify-checkbox__label');
+                            var icon = querySelectorDeep('.taroify-checkbox__icon', checkbox) || checkbox.querySelector('.taroify-checkbox__icon');
+                            var label = querySelectorDeep('.taroify-checkbox__label', checkbox) || checkbox.querySelector('.taroify-checkbox__label');
                             
-                            // Dispatches standard DOM MouseEvent on targets to bypass framework synthetic limitations
                             if (icon) icon.dispatchEvent(clickEvt);
                             else if (label) label.dispatchEvent(clickEvt);
                             else checkbox.dispatchEvent(clickEvt);
@@ -114,21 +135,23 @@ class WebViewController: NSViewController, WKNavigationDelegate {
                         
                         setTimeout(function() {
                             try {
+                                console.log("MomoBar AutoAgree: Click-dispatching submit button.");
                                 var submitEvt = new MouseEvent('click', { bubbles: true, cancelable: true });
                                 button.dispatchEvent(submitEvt);
                             } catch (e) {
                                 button.click();
                             }
                             clearInterval(checkInterval);
-                        }, 200);
+                        }, 250);
                     }
                 } catch (err) {
-                    console.error("MomoBar AutoAgree script error:", err);
+                    console.error("MomoBar AutoAgree error:", err);
                 }
-            }, 400);
+            }, 450);
             
             // Safety timeout to clear interval after 15s (saves resources if page isn't the beta notification)
             setTimeout(function() {
+                console.log("MomoBar AutoAgree: Timeout reached, stopping search.");
                 clearInterval(checkInterval);
             }, 15000);
         })();
