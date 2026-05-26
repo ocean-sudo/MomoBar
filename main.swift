@@ -219,6 +219,38 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.preferences.setValue(true, forKey: "developerExtrasEnabled") // Enable right-click inspect element
         
+        // Add auto-agree user script for public beta notification page
+        let userContentController = WKUserContentController()
+        let autoAgreeJS = """
+        (function() {
+            var checkInterval = setInterval(function() {
+                var checkbox = document.querySelector('.taroify-checkbox');
+                var button = document.querySelector('taro-button-core');
+                if (checkbox && button && button.textContent.includes('开始学习')) {
+                    // Check if already checked to avoid double-clicking
+                    var isChecked = checkbox.classList.contains('taroify-checkbox--checked') || 
+                                    checkbox.innerHTML.includes('checked') || 
+                                    checkbox.querySelector('[class*="checked"]') !== null;
+                    if (!isChecked) {
+                        checkbox.click();
+                    }
+                    setTimeout(function() {
+                        button.click();
+                    }, 150);
+                    clearInterval(checkInterval);
+                }
+            }, 300);
+            
+            // Safety timeout to clear interval after 15s (saves resources if page isn't the beta notification)
+            setTimeout(function() {
+                clearInterval(checkInterval);
+            }, 15000);
+        })();
+        """
+        let userScript = WKUserScript(source: autoAgreeJS, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        userContentController.addUserScript(userScript)
+        webConfiguration.userContentController = userContentController
+        
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 610), configuration: webConfiguration)
         webView.navigationDelegate = self
         
