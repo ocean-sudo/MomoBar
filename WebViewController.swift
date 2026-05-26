@@ -2,30 +2,47 @@ import Cocoa
 import WebKit
 import Carbon
 
-class WebViewController: NSViewController, WKNavigationDelegate {
+// Dark mode preference: 0 = light, 1 = dark, 2 = follow system
+enum DarkModeOption: Int {
+    case light = 0
+    case dark = 1
+    case followSystem = 2
+}
+
+class WebViewController: NSViewController, WKNavigationDelegate, NSMenuDelegate {
     var webView: WKWebView!
-    var toolbar: NSView!
+    var toolbar: NSVisualEffectView!
 
     var cleanModeButton: NSButton!
     
     let defaultURL = "https://www.maimemo.com/home/web_study" // Set Maimemo as default
     let urlKey = "SavedLastURL"
     let cleanModeKey = "IsCleanModeActive"
+    let darkModeKey = "DarkModeOption"
     
     var isCleanModeActive = true
+    var darkModeOption: DarkModeOption = .followSystem
+    
+    // System appearance observer
+    private var appearanceObserver: NSKeyValueObservation?
     
     override func loadView() {
         // Load preferences
         isCleanModeActive = UserDefaults.standard.object(forKey: cleanModeKey) as? Bool ?? true
+        darkModeOption = DarkModeOption(rawValue: UserDefaults.standard.integer(forKey: darkModeKey)) ?? .followSystem
         
         // Create container view
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 650))
         self.view = container
         
-        // 1. Create Toolbar (Top)
-        toolbar = NSView(frame: NSRect(x: 0, y: 610, width: 400, height: 40))
-        toolbar.wantsLayer = true
-        toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        // Apply initial appearance
+        applyDarkMode()
+        
+        // 1. Create Toolbar (Top) with native vibrancy/blur
+        toolbar = NSVisualEffectView(frame: NSRect(x: 0, y: 610, width: 400, height: 40))
+        toolbar.material = .headerView
+        toolbar.blendingMode = .withinWindow
+        toolbar.state = .active
         container.addSubview(toolbar)
         
         // 2. Refresh Button
@@ -167,6 +184,14 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         // Load saved URL or default
         let savedURL = UserDefaults.standard.string(forKey: urlKey) ?? defaultURL
         loadURL(savedURL)
+        
+        // Observe system appearance changes for "follow system" dark mode
+        appearanceObserver = NSApp.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+            guard let self = self, self.darkModeOption == .followSystem else { return }
+            DispatchQueue.main.async {
+                self.applyDarkMode()
+            }
+        }
     }
     
     func loadURL(_ urlString: String) {
@@ -256,6 +281,33 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
     
+    // MARK: - Dark Mode (Native NSAppearance)
+    
+    /// Apply dark mode by setting the view's NSAppearance.
+    /// WKWebView will natively communicate prefers-color-scheme to web content.
+    func applyDarkMode() {
+        switch darkModeOption {
+        case .light:
+            view.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            view.appearance = NSAppearance(named: .darkAqua)
+        case .followSystem:
+            view.appearance = nil  // Inherit from system
+        }
+    }
+    
+    @objc func setDarkModeLight() { setDarkMode(.light) }
+    @objc func setDarkModeDark() { setDarkMode(.dark) }
+    @objc func setDarkModeSystem() { setDarkMode(.followSystem) }
+    
+    private func setDarkMode(_ option: DarkModeOption) {
+        darkModeOption = option
+        UserDefaults.standard.set(option.rawValue, forKey: darkModeKey)
+        applyDarkMode()
+    }
+    
+    // MARK: - Settings Menu
+    
     // Dropdown Settings Menu Action
     @objc func showSettingsMenu(_ sender: NSButton) {
         let menu = NSMenu()
@@ -263,6 +315,30 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         let headerItem = NSMenuItem(title: "MomoBar 设置", action: nil, keyEquivalent: "")
         headerItem.isEnabled = false
         menu.addItem(headerItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        // Dark mode submenu
+        let darkModeItem = NSMenuItem(title: "深色模式", action: nil, keyEquivalent: "")
+        let darkModeSubmenu = NSMenu()
+        
+        let lightItem = NSMenuItem(title: "浅色", action: #selector(setDarkModeLight), keyEquivalent: "")
+        lightItem.target = self
+        if darkModeOption == .light { lightItem.state = .on }
+        darkModeSubmenu.addItem(lightItem)
+        
+        let darkItem = NSMenuItem(title: "深色", action: #selector(setDarkModeDark), keyEquivalent: "")
+        darkItem.target = self
+        if darkModeOption == .dark { darkItem.state = .on }
+        darkModeSubmenu.addItem(darkItem)
+        
+        let systemItem = NSMenuItem(title: "跟随系统", action: #selector(setDarkModeSystem), keyEquivalent: "")
+        systemItem.target = self
+        if darkModeOption == .followSystem { systemItem.state = .on }
+        darkModeSubmenu.addItem(systemItem)
+        
+        darkModeItem.submenu = darkModeSubmenu
+        menu.addItem(darkModeItem)
+        
         menu.addItem(NSMenuItem.separator())
         
         // Display Current Hotkey in Option Label
@@ -284,9 +360,27 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
         
+        // Set delegate to handle menu close for popover dismissal fix
+        menu.delegate = self
+        
         // Popup menu relative to the button
         let p = NSPoint(x: 0, y: sender.frame.height + 4)
         menu.popUp(positioning: nil, at: p, in: sender)
+    }
+    
+    // NSMenuDelegate: After menu closes, check if mouse is outside popover and dismiss
+    func menuDidClose(_ menu: NSMenu) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self = self, let window = self.view.window else { return }
+            let mouseLocation = NSEvent.mouseLocation
+            let windowFrame = window.frame
+            if !windowFrame.contains(mouseLocation) {
+                // Mouse is outside the popover — find and close the popover
+                if let appDelegate = NSApp.delegate as? AppDelegate {
+                    appDelegate.popover.performClose(nil)
+                }
+            }
+        }
     }
     
     @objc func changeHotkey() {
@@ -329,6 +423,12 @@ class WebViewController: NSViewController, WKNavigationDelegate {
                 errorAlert.runModal()
             }
         }
+    }
+    
+    // MARK: - View Lifecycle
+    
+    override func viewDidAppear() {
+        super.viewDidAppear()
     }
     
     // WKNavigationDelegate
