@@ -272,7 +272,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
     @objc func showSettingsMenu(_ sender: NSButton) {
         let menu = NSMenu()
         
-        let headerItem = NSMenuItem(title: "MomoBar Settings", action: nil, keyEquivalent: "")
+        let headerItem = NSMenuItem(title: "MomoBar 设置", action: nil, keyEquivalent: "")
         headerItem.isEnabled = false
         menu.addItem(headerItem)
         menu.addItem(NSMenuItem.separator())
@@ -282,17 +282,17 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         let modifiers = UserDefaults.standard.object(forKey: "HotkeyModifiers") as? UInt32 ?? UInt32(cmdKey | shiftKey)
         let hotkeyStr = HotkeyManager.shared.formatHotkeyString(keyCode: keyCode, modifiers: modifiers)
         
-        let hotkeyItem = NSMenuItem(title: "Global Shortcut... (\(hotkeyStr))", action: #selector(changeHotkey), keyEquivalent: "")
+        let hotkeyItem = NSMenuItem(title: "自定义全局快捷键... (当前: \(hotkeyStr))", action: #selector(changeHotkey), keyEquivalent: "")
         hotkeyItem.target = self
         menu.addItem(hotkeyItem)
         
-        let homeItem = NSMenuItem(title: "Back to Home", action: #selector(goHome), keyEquivalent: "")
+        let homeItem = NSMenuItem(title: "返回背单词主页", action: #selector(goHome), keyEquivalent: "")
         homeItem.target = self
         menu.addItem(homeItem)
         
         menu.addItem(NSMenuItem.separator())
         
-        let quitItem = NSMenuItem(title: "Quit MomoBar", action: #selector(quitApp), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "退出 MomoBar", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
         
@@ -306,15 +306,15 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         let modifiers = UserDefaults.standard.object(forKey: "HotkeyModifiers") as? UInt32 ?? UInt32(cmdKey | shiftKey)
         
         let alert = NSAlert()
-        alert.messageText = "Set Global Shortcut"
-        alert.informativeText = "Select your modifiers and enter a letter to update the global shortcut for launching MomoBar."
+        alert.messageText = "设置全局快捷键"
+        alert.informativeText = "请勾选您想要的修饰键，并在输入框中填入一个字母键以自定义全局呼出/隐藏 MomoBar 的快捷键组合。"
         alert.alertStyle = .informational
         
         let settingsView = HotkeySettingsView(currentKeyCode: keyCode, currentModifiers: modifiers)
         alert.accessoryView = settingsView
         
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
         
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
@@ -334,9 +334,10 @@ class WebViewController: NSViewController, WKNavigationDelegate {
                 HotkeyManager.shared.registerHotkey(keyCode: newKeyCode, modifiers: newModifiers)
             } else {
                 let errorAlert = NSAlert()
-                errorAlert.messageText = "Invalid Shortcut"
-                errorAlert.informativeText = "Please enter a valid keyboard letter (A-Z)."
+                errorAlert.messageText = "无效的快捷键"
+                errorAlert.informativeText = "请输入一个有效的键盘字母 (A-Z)。"
                 errorAlert.alertStyle = .critical
+                errorAlert.addButton(withTitle: "确定")
                 errorAlert.runModal()
             }
         }

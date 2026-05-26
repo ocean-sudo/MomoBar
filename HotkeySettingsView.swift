@@ -22,7 +22,7 @@ class HotkeySettingsView: NSView {
         optCheckbox.state = (currentModifiers & UInt32(optionKey) != 0) ? .on : .off
         ctrlCheckbox.state = (currentModifiers & UInt32(controlKey) != 0) ? .on : .off
         
-        let label = NSTextField(labelWithString: "Shortcut Key:")
+        let label = NSTextField(labelWithString: "快捷键字母:")
         label.frame = NSRect(x: 10, y: 10, width: 90, height: 20)
         addSubview(label)
         
