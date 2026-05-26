@@ -17,7 +17,7 @@ jobs:
 
       - name: Compile Swift App
         run: |
-          swiftc -O main.swift -o MomoBar
+          swiftc -O main.swift AppDelegate.swift WebViewController.swift HotkeySettingsView.swift HotkeyManager.swift -o MomoBar
 
       - name: Construct .app Bundle
         run: |
