@@ -5,7 +5,7 @@ import Carbon
 class WebViewController: NSViewController, WKNavigationDelegate {
     var webView: WKWebView!
     var toolbar: NSView!
-    var urlTextField: NSTextField!
+
     var cleanModeButton: NSButton!
     
     let defaultURL = "https://www.maimemo.com/home/web_study" // Set Maimemo as default
@@ -60,16 +60,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         cleanModeButton.action = #selector(toggleCleanMode)
         toolbar.addSubview(cleanModeButton)
         
-        // 5. URL Text Field (fixed bounds to avoid overlapping with settings button)
-        urlTextField = NSTextField(frame: NSRect(x: 105, y: 8, width: 250, height: 24))
-        urlTextField.isEditable = true
-        urlTextField.isSelectable = true
-        urlTextField.bezelStyle = .roundedBezel
-        urlTextField.font = NSFont.systemFont(ofSize: 11)
-        urlTextField.target = self
-        urlTextField.action = #selector(loadUserURL)
-        urlTextField.placeholderString = "Enter URL or Search..."
-        toolbar.addSubview(urlTextField)
+
         
         // 6. Settings Button (Gear dropdown menu)
         let settingsButton = NSButton(frame: NSRect(x: 366, y: 8, width: 24, height: 24))
@@ -169,7 +160,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         // Auto resizing setup
         webView.autoresizingMask = [.width, .height]
         toolbar.autoresizingMask = [.width, .minYMargin]
-        urlTextField.autoresizingMask = [.width]
+
         cleanModeButton.autoresizingMask = [.none]
         settingsButton.autoresizingMask = [.minXMargin]
         
@@ -191,7 +182,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         
         if let url = URL(string: cleanURL) {
             webView.load(URLRequest(url: url))
-            urlTextField.stringValue = cleanURL
         }
     }
     
@@ -203,9 +193,7 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         loadURL(defaultURL)
     }
     
-    @objc func loadUserURL() {
-        loadURL(urlTextField.stringValue)
-    }
+
     
     @objc func quitApp() {
         NSApp.terminate(nil)
@@ -348,7 +336,6 @@ class WebViewController: NSViewController, WKNavigationDelegate {
         applyCleanMode()
         
         if let url = webView.url {
-            urlTextField.stringValue = url.absoluteString
             UserDefaults.standard.set(url.absoluteString, forKey: urlKey)
         }
     }

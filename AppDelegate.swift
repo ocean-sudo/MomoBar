@@ -63,7 +63,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 popover.performClose(sender)
             } else {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                popover.contentViewController?.view.window?.makeKey()
+                if let window = popover.contentViewController?.view.window {
+                    window.makeKey()
+                    // Explicitly make the WKWebView the first responder of the popover window to bypass textfield focus
+                    if let webVC = popover.contentViewController as? WebViewController {
+                        window.makeFirstResponder(webVC.webView)
+                    }
+                }
             }
         }
     }
