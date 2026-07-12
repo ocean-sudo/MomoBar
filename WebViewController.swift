@@ -2,6 +2,29 @@ import Cocoa
 import WebKit
 import Carbon
 
+// Custom NSView that silently consumes unhandled key events,
+// preventing the macOS system alert beep ("bonk") sound.
+// In a popover-based app, if WKWebView doesn't consume a key press
+// (e.g. no focused input field), the event bubbles up and triggers the beep.
+class SilentKeyView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+    override func keyDown(with event: NSEvent) {
+        // Intentionally do nothing — swallow the event silently
+    }
+
+    // Suppress the macOS system alert beep when a key event is not handled
+    // by any responder in the chain (e.g. webpage shortcuts consumed by JS
+    // but not marked as handled by WebKit).
+    override func noResponder(for eventSelector: Selector) {
+        if eventSelector == #selector(keyDown(with:)) ||
+           eventSelector == #selector(keyUp(with:)) ||
+           eventSelector == #selector(flagsChanged(with:)) {
+            return
+        }
+        super.noResponder(for: eventSelector)
+    }
+}
+
 // Dark mode preference: 0 = light, 1 = dark, 2 = follow system
 enum DarkModeOption: Int {
     case light = 0
@@ -31,8 +54,8 @@ class WebViewController: NSViewController, WKNavigationDelegate, NSMenuDelegate 
         isCleanModeActive = UserDefaults.standard.object(forKey: cleanModeKey) as? Bool ?? true
         darkModeOption = DarkModeOption(rawValue: UserDefaults.standard.integer(forKey: darkModeKey)) ?? .followSystem
         
-        // Create container view
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 650))
+        // Create container view (SilentKeyView swallows unhandled key events to prevent system beep)
+        let container = SilentKeyView(frame: NSRect(x: 0, y: 0, width: 400, height: 650))
         self.view = container
         
         // Apply initial appearance
