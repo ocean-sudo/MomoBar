@@ -16,7 +16,7 @@ class HotkeyManager {
         
         HotkeyManager.onHotkeyTriggered = onTrigger
         
-        let status = InstallEventHandler(GetApplicationEventTarget(), { (nextHandler, event, userData) -> OSStatus in
+        let status = InstallEventHandler(GetEventDispatcherTarget(), { (nextHandler, event, userData) -> OSStatus in
             HotkeyManager.onHotkeyTriggered?()
             return noErr
         }, 1, &eventType, nil, nil)
@@ -45,7 +45,7 @@ class HotkeyManager {
         var gHotKeyRef: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: 1296975947, id: 1) // "MMHK"
         
-        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &gHotKeyRef)
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &gHotKeyRef)
         if status == noErr {
             hotKeyRef = gHotKeyRef
             print("Hotkey registered successfully! KeyCode: \(keyCode), Modifiers: \(modifiers)")

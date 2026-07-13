@@ -4,8 +4,8 @@ import Carbon
 
 // Custom NSView that silently consumes unhandled key events,
 // preventing the macOS system alert beep ("bonk") sound.
-// In a popover-based app, if WKWebView doesn't consume a key press
-// (e.g. no focused input field), the event bubbles up and triggers the beep.
+// If WKWebView doesn't consume a key press (e.g. no focused input field),
+// the event walks the responder chain and triggers the beep.
 class SilentKeyView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {
@@ -398,7 +398,7 @@ class WebViewController: NSViewController, WKNavigationDelegate, NSMenuDelegate 
             let mouseLocation = NSEvent.mouseLocation
             let windowFrame = window.frame
             if !windowFrame.contains(mouseLocation) {
-                // Mouse is outside the popover — find and close the popover
+                // Mouse is outside the popover — close it
                 if let appDelegate = NSApp.delegate as? AppDelegate {
                     appDelegate.popover.performClose(nil)
                 }
@@ -449,17 +449,72 @@ class WebViewController: NSViewController, WKNavigationDelegate, NSMenuDelegate 
     }
     
     // MARK: - View Lifecycle
-    
+
     override func viewDidAppear() {
         super.viewDidAppear()
+        focusWebView()
     }
-    
+
+    /// Move keyboard focus into the WKWebView.
+    ///
+    /// NSPopover windows become key asynchronously, so the actual focus work is
+    /// deferred by one runloop turn. Programmatically setting first responder is
+    /// not enough for WebKit: its internal input context also needs a mouse event
+    /// to be routed through AppKit. We therefore dispatch a synthetic click at the
+    /// center of the web view.
+    func focusWebView() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  self.popoverIsVisible,
+                  let window = self.view.window else { return }
+
+            window.makeKey()
+            window.makeFirstResponder(self.webView)
+            self.simulateClickInWebView()
+        }
+    }
+
+    /// Dispatch a synthetic left-mouse click at the center of the web view through
+    /// NSApplication's normal event path. This wakes up WebKit's input context so
+    /// that webpage keyboard shortcuts and text fields work without requiring the
+    /// user to click first.
+    private func simulateClickInWebView() {
+        guard let window = webView.window else { return }
+
+        let centerInWebView = NSPoint(x: webView.bounds.midX, y: webView.bounds.midY)
+        let centerInWindow = webView.convert(centerInWebView, to: nil)
+
+        for eventType in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(with: eventType,
+                                               location: centerInWindow,
+                                               modifierFlags: [],
+                                               timestamp: ProcessInfo.processInfo.systemUptime,
+                                               windowNumber: window.windowNumber,
+                                               context: nil,
+                                               eventNumber: 0,
+                                               clickCount: 1,
+                                               pressure: 1.0) {
+                NSApp.sendEvent(event)
+            }
+        }
+    }
+
+    private var popoverIsVisible: Bool {
+        (NSApp.delegate as? AppDelegate)?.popover.isShown ?? false
+    }
+
     // WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         applyCleanMode()
-        
+
         if let url = webView.url {
             UserDefaults.standard.set(url.absoluteString, forKey: urlKey)
+        }
+
+        // If the popover is already visible when the page finishes loading,
+        // re-establish focus so WebKit hooks up the DOM properly.
+        if popoverIsVisible {
+            focusWebView()
         }
     }
     
